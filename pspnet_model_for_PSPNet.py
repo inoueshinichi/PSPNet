@@ -73,7 +73,118 @@ class PSPNet(nn.Module):
         return (output, output_aux)
 
 
+"""FeatureMap_convolutionの実装
 
+input <- (3, 475, 475)
+1) Conv2DBatchNormRelu
+    conv 3x3
+    batch_norm
+    relu
+output -> (64, 238, 238)
+
+input <- (64, 238, 238)
+2) Conv2DBatchNormRelu
+    conv 3x3
+    batch_norm
+    relu
+output -> (64, 238, 238)
+
+input <- (64, 238, 238)
+3) Conv2DBatchNormRelu
+    conv 3x3
+    batch_norm
+    relu
+output -> (128, 238, 238)
+
+input <- (128, 238, 238)
+4) MaxPooling 2x2
+output -> (128, 119, 119)
+
+"""
+
+# Conv2dBatchNormRelu
+class Conv2dBatchNormRelu(nn.Module):
     
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, dilation, bias):
+        super(Conv2dBatchNormRelu, self).__init__()
 
+        self.conv = nn.Conv2d(in_channels, out_channels, 
+                              kernel_size, stride, 
+                              padding, dilation, bias=bias)
         
+        self.batch_norm = nn.BatchNorm2d(out_channels)
+
+        # inplace設定で入力をメモリに保存せずに出力を計算してメモリを削減する
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.batch_norm(x)
+        outputs = self.relu(x)
+        return outputs
+
+# FeatureMap_convolution
+class FeatureMap_convolution(nn.Module):
+
+    def __init__(self):
+        super(FeatureMap_convolution, self).__init__()
+
+        # 畳み込み層1
+        in_channels = 3
+        out_channels = 64
+        kernel_size = 3
+        stride = 2
+        padding = 1
+        dilation = 1
+        bias = False
+        self.chnr_1 = Conv2dBatchNormRelu(in_channels,
+                                          out_channels,
+                                          kernel_size,
+                                          stride,
+                                          padding,
+                                          dilation,
+                                          bias)
+        
+        # 畳み込み層2
+        in_channels = 64
+        out_channels = 64
+        kernel_size = 3
+        stride = 1
+        padding = 1
+        dilation = 1
+        bias = False
+        self.chnr_2 = Conv2dBatchNormRelu(in_channels,
+                                          out_channels,
+                                          kernel_size,
+                                          stride,
+                                          padding,
+                                          dilation,
+                                          bias)
+        
+        # 畳み込み層3
+        in_channels = 64
+        out_channels = 128
+        kernel_size = 3
+        stride = 1
+        padding = 1
+        dilation = 1
+        bias = False
+        self.chnr_3 = Conv2dBatchNormRelu(in_channels,
+                                          out_channels,
+                                          kernel_size,
+                                          stride,
+                                          padding,
+                                          dilation,
+                                          bias)
+
+        # MaxPooling層
+        self.maxpooling = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+    def forward(self, x):
+        x = self.chnr_1.forward(x)
+        x = self.chnr_2.forward(x)
+        x = self.chnr_3.forward(x)
+        outputs = self.maxpooling(x)
+        return outputs
+    
+    
