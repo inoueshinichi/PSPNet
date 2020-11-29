@@ -187,4 +187,167 @@ class FeatureMap_convolution(nn.Module):
         outputs = self.maxpooling(x)
         return outputs
     
+
+""" ResidualBlockPSPの実装
+    1) bottleNeckPSP
+    2) bottoeNeckIdentifyPSP x N 回
+    NはResidualBlockPSPサブネットワークを4回繰り返すが、
+    それぞれ、3, 4, 6, 3回繰り返す.
+"""
+class ResidualBlockPSP(nn.Sequential):
+
+    def __init__(self, n_blocks, in_channels, mid_channels, out_channels, stride, dilation):
+        super(ResidualBlockPSP, self).__init__()
+
+        # bottleNeckPSPの用意
+        self.add_module(
+            "block1",
+            bottleNeckPSP(in_channels, mid_channels, out_channels, stride, dilation)
+        )
+        
+        # bottleNeckIdentifyPSPの繰り返しを用意
+        for i in range(n_blocks - 1):
+            self.add_module(
+                "bottle" + str(i + 2),
+                bottleNeckIdentifyPSP(out_channels, mid_channels, stride, dilation)
+            )
+
+
+""" BottleNeckPSPとBottleNeckIdentifyPSPの実装
+    1) BottleNeckPSP
+        input
+        |------------------------------------
+        |                                   |
+        |                                  Conv2dBatchNormRelu(C1 -> BatchNorm -> Relu)
+        |                                   |
+        Conv2dBatchNorm(C1 -> BatchNoru)   Conv2dBatchNormRelu(C3 -> BatchNorm -> Relu)
+        |                                   |
+        |                                  Conv2dBatchNorm(C1 -> BatchNorm)
+        |                                   |
+        -------------------------------------
+        |
+        output
+
+    2) BottleNeckIdentifyPSP
+        input
+        |------------------------------------
+        |                                   |
+        |                                  Conv2dBatchNormRelu(C1 -> BatchNorm -> Relu)
+        |                                   |
+        y=f(x)                             Conv2dBatchNormRelu(C3 -> BatchNorm -> Relu)
+        |                                   |
+        |                                  Conv2dBatchNorm(C1 -> BatchNorm)
+        |                                   |
+        -------------------------------------
+        |
+        output
+"""
+class Conv2dNorm(nn.Module):
+
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, dilation, bias):
+        super(Conv2dNorm, self).__init__()
+
+        self.conv = nn.Conv2d(in_channels=in_channels,
+                              out_channels=out_channels,
+                              kernel_size=kernel_size,
+                              stride=stride,
+                              padding=padding,
+                              dilation=dilation,
+                              bias=bias)
+        
+        self.batchnorm = nn.BatchNorm2d(num_features=out_channels)
+
+    def forward(self, x):
+        x = self.conv(x)
+        outputs = self.batchnorm(x)
+        return outputs
+
     
+class BottleNeckPSP(nn.Module):
+
+    def __init__(self, in_channels, mid_channels, out_channels, stride, dilation):
+        super(BottleNeckPSP, self).__init__()
+
+        self.cbr_1 = Conv2dBatchNormRelu(in_channels=in_channels,
+                                         out_channels=mid_channels,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         dilation=1,
+                                         bias=False)
+                                
+        self.cbr_2 = Conv2dBatchNormRelu(in_channels=mid_channels,
+                                         out_channels=mid_channels,
+                                         kernel_size=3,
+                                         stride=stride,
+                                         padding=dilation,
+                                         dilation=dilation,
+                                         bias=False)
+        
+        self.cb_3 = Conv2dBatchNormRelu(in_channels=mid_channels,
+                                         out_channels=out_channels,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         dilation=1,
+                                         bias=False)
+
+        # ショートカットコネクション
+        self.cb_residual = Conv2dNorm(in_channels=in_channels,
+                                      out_channels=out_channels,
+                                      kernel_size=1,
+                                      stride=1,
+                                      padding=0,
+                                      dilation=1,
+                                      bias=False)
+        
+        self.relu = nn.ReLU(inplace=True)
+
+
+    def forward(self, x):
+        conv = self.cb_3(self.cbr_2(self.cbr_1(x)))
+        residual = self.cb_residual(x)
+        output = self.relu(conv + residual)
+        return output
+
+    
+class BottleNeckIdentifyPSP(nn.Module):
+
+    def __init__(self, in_channels, mid_channels, out_channels, stride, padding, dilation):
+        super(BottleNeckIdentifyPSP, self).__init__()
+
+        self.cbr_1 = Conv2dBatchNormRelu(in_channels=in_channels,
+                                         out_channels=mid_channels,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         dilation=1,
+                                         bias=False)
+                                
+        self.cbr_2 = Conv2dBatchNormRelu(in_channels=mid_channels,
+                                         out_channels=mid_channels,
+                                         kernel_size=3,
+                                         stride=stride,
+                                         padding=dilation,
+                                         dilation=dilation,
+                                         bias=False)
+        
+        self.cb_3 = Conv2dBatchNormRelu(in_channels=mid_channels,
+                                         out_channels=out_channels,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         dilation=1,
+                                         bias=False)
+
+        self.relu = nn.ReLU(inplace=True)
+
+    
+    def forward(self, x):
+        conv = self.cb_3(self.cbr_2(self.cbr_1(x)))
+        residual = x
+        output = self.relu(conv + residual)
+        return output
+
+    
+                                
