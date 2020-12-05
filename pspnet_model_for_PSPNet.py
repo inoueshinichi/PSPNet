@@ -4,6 +4,7 @@
 # サードパーティ
 import torch
 import torch.nn as nn
+from torch.functional import F
 import torch.optim as optim
 import torchvision
 from torchvision import models, transforms
@@ -44,7 +45,7 @@ class PSPNet(nn.Module):
 
         # Pyramid pooling
         self.pyramid_pooling = PyramidPooling(in_channels=2048,
-                                              pool_sizes[6, 3, 2, 1],
+                                              pool_sizes=[6, 3, 2, 1],
                                               height=img_size_8,
                                               width=img_size_8)
 
@@ -200,17 +201,13 @@ class ResidualBlockPSP(nn.Sequential):
         super(ResidualBlockPSP, self).__init__()
 
         # bottleNeckPSPの用意
-        self.add_module(
-            "block1",
-            bottleNeckPSP(in_channels, mid_channels, out_channels, stride, dilation)
-        )
+        self.add_module("block1",
+            BottleNeckPSP(in_channels, mid_channels, out_channels, stride, dilation))
         
         # bottleNeckIdentifyPSPの繰り返しを用意
         for i in range(n_blocks - 1):
-            self.add_module(
-                "bottle" + str(i + 2),
-                bottleNeckIdentifyPSP(out_channels, mid_channels, stride, dilation)
-            )
+            self.add_module("bottle" + str(i + 2),
+                BottleNeckIdentifyPSP(out_channels, mid_channels, stride, dilation))
 
 
 """ BottleNeckPSPとBottleNeckIdentifyPSPの実装
@@ -351,3 +348,46 @@ class BottleNeckIdentifyPSP(nn.Module):
 
     
                                 
+# PyramidPooling
+class PyramidPooling(nn.Module):
+    def __init__(self, in_channels, pool_sizes, height, width):
+        super(PyramidPooling, self).__init__()
+        
+        # forwardで使用する画像サイズ
+        self.height = height
+        self.width = width
+
+        # 各畳込み層の出力チャネル数
+        out_channels = int(in_channels / len(pool_sizes))
+
+        # 各畳込み層を作成
+        self.avg_pool_list = []
+        self.cbr_list = []
+        for divide in pool_sizes:
+            avg_pool = nn.AdaptiveAvgPool2d(output_size=divide)
+            cbr = Conv2dBatchNormRelu(in_channels=in_channels,
+                                      out_channels=out_channels,
+                                      kernel_size=1,
+                                      stride=1,
+                                      padding=0,
+                                      dilation=1,
+                                      bias=False)
+            self.avg_pool_list.append(avg_pool)
+            self.cbr_list.append(cbr)
+
+
+    def forward(self, x):
+        pyramid_poolings = [x]
+        for avg_pool, cbr in zip(self.avg_pool_list, self.cbr_list):
+            out = cbr(avg_pool(x)) # (512,h,w)
+            # Deconvolution(Upsampling)
+            out = F.interpolate(out, size=(self.height, self.width), mode="bilinear", align_corners=True)
+            pyramid_poolings.append(out)
+
+        # pyramid_poolingの4つの出力の各チャネル数は512, h:60, w:60
+        # PyramidPoolingの入力前と4つの出力を(N,C,H,W)のCの次元で連結
+        output = torch.cat(pyramid_poolings, dim=1)
+        return output
+
+
+    
