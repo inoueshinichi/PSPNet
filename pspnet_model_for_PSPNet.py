@@ -465,5 +465,3 @@ class AuxiliaryPSPLayers(nn.Module):
                                mode='bilinear',
                                align_corners=True)
         return output
-
-
