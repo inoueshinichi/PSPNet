@@ -26,22 +26,26 @@ class PSPNet(nn.Module):
                                               in_channels=128,
                                               mid_channels=64,
                                               out_channels=256,
-                                              stride=1, dilation=1)
+                                              stride=1, 
+                                              dilation=1)
         self.feature_res_2 = ResidualBlockPSP(n_blocks=block_config[1],
                                               in_channels=256,
                                               mid_channels=128,
                                               out_channels=512,
-                                              stride=2, dilation=1)
+                                              stride=2, 
+                                              dilation=1)
         self.feature_dilated_res_1 = ResidualBlockPSP(n_blocks=block_config[2],
                                                       in_channels=512,
                                                       mid_channels=256,
                                                       out_channels=1024,
-                                                      stride=1, dilation=2)
+                                                      stride=1, 
+                                                      dilation=2)
         self.feature_dilated_res_2 = ResidualBlockPSP(n_blocks=block_config[3],
                                                       in_channels=1024,
                                                       mid_channels=512,
                                                       out_channels=2048,
-                                                      stride=1, dilation=4)
+                                                      stride=1, 
+                                                      dilation=4)
 
         # Pyramid pooling
         self.pyramid_pooling = PyramidPooling(in_channels=2048,
@@ -55,7 +59,7 @@ class PSPNet(nn.Module):
                                                n_classes=n_classes)
 
         # Auxilliary-Loss
-        self.aux = AuxilliaryPSPlayers(in_channels=1024,
+        self.aux = AuxiliaryPSPLayers(in_channels=1024,
                                        height=img_size,
                                        width=img_size,
                                        n_classes=n_classes)
@@ -239,10 +243,10 @@ class ResidualBlockPSP(nn.Sequential):
         |
         output
 """
-class Conv2dNorm(nn.Module):
+class Conv2dBatchNorm(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding, dilation, bias):
-        super(Conv2dNorm, self).__init__()
+        super(Conv2dBatchNorm, self).__init__()
 
         self.conv = nn.Conv2d(in_channels=in_channels,
                               out_channels=out_channels,
@@ -281,22 +285,22 @@ class BottleNeckPSP(nn.Module):
                                          dilation=dilation,
                                          bias=False)
         
-        self.cb_3 = Conv2dBatchNormRelu(in_channels=mid_channels,
-                                         out_channels=out_channels,
-                                         kernel_size=1,
-                                         stride=1,
-                                         padding=0,
-                                         dilation=1,
-                                         bias=False)
+        self.cb_3 = Conv2dBatchNorm(in_channels=mid_channels,
+                                    out_channels=out_channels,
+                                    kernel_size=1,
+                                    stride=1,
+                                    padding=0,
+                                    dilation=1,
+                                    bias=False)
 
         # ショートカットコネクション
-        self.cb_residual = Conv2dNorm(in_channels=in_channels,
-                                      out_channels=out_channels,
-                                      kernel_size=1,
-                                      stride=1,
-                                      padding=0,
-                                      dilation=1,
-                                      bias=False)
+        self.cb_residual = Conv2dBatchNorm(in_channels=in_channels,
+                                           out_channels=out_channels,
+                                           kernel_size=1,
+                                           stride=stride,
+                                           padding=0,
+                                           dilation=1,
+                                           bias=False)
         
         self.relu = nn.ReLU(inplace=True)
 
@@ -310,7 +314,7 @@ class BottleNeckPSP(nn.Module):
     
 class BottleNeckIdentifyPSP(nn.Module):
 
-    def __init__(self, in_channels, mid_channels, out_channels, stride, padding, dilation):
+    def __init__(self, in_channels, mid_channels, stride, dilation):
         super(BottleNeckIdentifyPSP, self).__init__()
 
         self.cbr_1 = Conv2dBatchNormRelu(in_channels=in_channels,
@@ -324,18 +328,18 @@ class BottleNeckIdentifyPSP(nn.Module):
         self.cbr_2 = Conv2dBatchNormRelu(in_channels=mid_channels,
                                          out_channels=mid_channels,
                                          kernel_size=3,
-                                         stride=stride,
+                                         stride=1,
                                          padding=dilation,
                                          dilation=dilation,
                                          bias=False)
         
-        self.cb_3 = Conv2dBatchNormRelu(in_channels=mid_channels,
-                                         out_channels=out_channels,
-                                         kernel_size=1,
-                                         stride=1,
-                                         padding=0,
-                                         dilation=1,
-                                         bias=False)
+        self.cb_3 = Conv2dBatchNorm(in_channels=mid_channels,
+                                    out_channels=in_channels,
+                                    kernel_size=1,
+                                    stride=1,
+                                    padding=0,
+                                    dilation=1,
+                                    bias=False)
 
         self.relu = nn.ReLU(inplace=True)
 
@@ -390,4 +394,76 @@ class PyramidPooling(nn.Module):
         return output
 
 
-    
+
+# Decoder
+class DecodePSPFeature(nn.Module):
+    def __init__(self, height, width, n_classes):
+        super(DecodePSPFeature, self).__init__()
+
+        self.height = height
+        self.width = width
+
+        self.cbr = Conv2dBatchNormRelu(in_channels=4096,
+                                       out_channels=512,
+                                       kernel_size=3,
+                                       stride=1,
+                                       padding=1,
+                                       dilation=1,
+                                       bias=False)
+        
+        self.dropout = nn.Dropout2d(p=0.1)
+
+        self.classification = nn.Conv2d(in_channels=512,
+                                        out_channels=n_classes,
+                                        kernel_size=1,
+                                        stride=1,
+                                        padding=0)
+
+    def forward(self, x):
+        x = self.cbr(x)
+        x = self.dropout(x)
+        x = self.classification(x)
+        # upsampling
+        output = F.interpolate(x,
+                               size=(self.height, self.width),
+                               mode='bilinear',
+                               align_corners=True)
+        return output
+
+
+# Aux
+class AuxiliaryPSPLayers(nn.Module):
+    def __init__(self, in_channels, height, width, n_classes):
+        super(AuxiliaryPSPLayers, self).__init__()
+
+        self.height = height
+        self.width = width
+
+        self.cbr = Conv2dBatchNormRelu(in_channels=in_channels,
+                                       out_channels=256,
+                                       kernel_size=3,
+                                       stride=1,
+                                       padding=1,
+                                       dilation=1,
+                                       bias=False)
+        
+        self.dropout = nn.Dropout2d(p=0.1)
+
+        self.classification = nn.Conv2d(in_channels=256,
+                                        out_channels=n_classes,
+                                        kernel_size=1,
+                                        stride=1,
+                                        padding=0)
+
+    def forward(self, x):
+        x = self.cbr(x)
+        x = self.dropout(x)
+        x = self.classification(x)
+        # upsampling
+        output = F.interpolate(x,
+                               size=(self.height, self.width),
+                               mode='bilinear',
+                               align_corners=True)
+        return output
+
+
