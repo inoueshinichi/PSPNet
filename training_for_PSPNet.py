@@ -205,7 +205,7 @@ def main():
         if isinstance(m, nn.Conv2d):
             nn.init.xavier_normal_(m.weight.data)
             if m.bias is not None: # バイアス項がある場合
-                nn.init.constant_(n.bias, 0.0)
+                nn.init.constant_(m.bias, 0.0)
     
     net.decode_feature.classification.apply(weights_init)
     net.aux.classification.apply(weights_init)
