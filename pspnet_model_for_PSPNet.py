@@ -21,26 +21,34 @@ class PSPNet(nn.Module):
         # Encoder
         # 4つのモジュールを構成するサブネットワークの用意
         self.feature_conv = FeatureMap_convolution()
+
         self.feature_res_1 = ResidualBlockPSP(n_blocks=block_config[0], 
                                               in_channels=128,
                                               mid_channels=64,
                                               out_channels=256,
-                                              stride=1, dilation=1)
+                                              stride=1, 
+                                              dilation=1)
+
         self.feature_res_2 = ResidualBlockPSP(n_blocks=block_config[1],
                                               in_channels=256,
                                               mid_channels=128,
                                               out_channels=512,
-                                              stride=2, dilation=1)
+                                              stride=2, 
+                                              dilation=1)
+
         self.feature_dilated_res_1 = ResidualBlockPSP(n_blocks=block_config[2],
                                                       in_channels=512,
                                                       mid_channels=256,
                                                       out_channels=1024,
-                                                      stride=1, dilation=2)
+                                                      stride=1, 
+                                                      dilation=2)
+
         self.feature_dilated_res_2 = ResidualBlockPSP(n_blocks=block_config[3],
                                                       in_channels=1024,
                                                       mid_channels=512,
                                                       out_channels=2048,
-                                                      stride=1, dilation=4)
+                                                      stride=1,
+                                                      dilation=4)
 
         # Pyramid pooling
         self.pyramid_pooling = PyramidPooling(in_channels=2048,
@@ -202,14 +210,14 @@ class ResidualBlockPSP(nn.Sequential):
         # bottleNeckPSPの用意
         self.add_module(
             "block1",
-            bottleNeckPSP(in_channels, mid_channels, out_channels, stride, dilation)
+            BottleNeckPSP(in_channels, mid_channels, out_channels, stride, dilation)
         )
         
         # bottleNeckIdentifyPSPの繰り返しを用意
         for i in range(n_blocks - 1):
             self.add_module(
                 "bottle" + str(i + 2),
-                bottleNeckIdentifyPSP(out_channels, mid_channels, stride, dilation)
+                BottleNeckIdentifyPSP(out_channels, mid_channels, out_channels, stride, dilation)
             )
 
 
@@ -313,7 +321,7 @@ class BottleNeckPSP(nn.Module):
     
 class BottleNeckIdentifyPSP(nn.Module):
 
-    def __init__(self, in_channels, mid_channels, out_channels, stride, padding, dilation):
+    def __init__(self, in_channels, mid_channels, out_channels, stride, dilation):
         super(BottleNeckIdentifyPSP, self).__init__()
 
         self.cbr_1 = Conv2dBatchNormRelu(in_channels=in_channels,
