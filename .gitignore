@@ -1,0 +1,7 @@
+# Directory
+/.vscode
+/.__pycache__
+/.ipynb_checkpoints
+
+# File
+*.pyc
