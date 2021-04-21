@@ -1,4 +1,4 @@
-# PSPNet
+# Semantic Segmentation (PSPNet)
 Pytorchによる発展ディープラーニング3章</br>
 セマンティックセグメンテーションの基本</br>
   
